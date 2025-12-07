@@ -12,7 +12,6 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-
 	// split the input data into lines
 	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
 
@@ -26,7 +25,7 @@ func main() {
 	tachyonBeams[sIndex] = 1
 
 	// process each line after the first one, updating tachyonBeams slice to carry the beams down,
-	// splitting aroung `^` characters
+	// splitting around `^` characters
 	for _, line := range lines[1:] {
 		for j, char := range line {
 			currentBeams := tachyonBeams[j]
@@ -46,13 +45,16 @@ func main() {
 			}
 		}
 	}
+
 	fmt.Printf("Total splits: %d\n", totalSplits)
-	fmt.Printf("Total active timelines: %d\n", func() int64 {
-		var sum int64 = 0
-		for _, v := range tachyonBeams {
-			sum += int64(v)
-		}
-		return sum
-	}())
+	fmt.Printf("Total active timelines: %d\n", sum(tachyonBeams))
 	fmt.Printf("Execution time: %s\n", time.Since(startTime))
+}
+
+func sum(a []int) int64 {
+	total := int64(0)
+	for _, v := range a {
+		total += int64(v)
+	}
+	return total
 }
