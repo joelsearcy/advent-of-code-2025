@@ -135,7 +135,7 @@ func main() {
 				problemStart := time.Now()
 
 				indicatorPresses := FindMinButtonPressesForIndicatorTarget(p.buttons, p.desiredIndicatorState)
-				
+
 				var joltagePresses int
 				switch solverType {
 				case "milp":
@@ -162,8 +162,11 @@ func main() {
 						stillWorking = append(stillWorking, prob)
 					}
 				}
-				fmt.Printf("Completed %d/%d (problem %d) in %s | Still working: %v\n",
-					done, len(problems), p.lineNum+1, time.Since(problemStart), stillWorking)
+				duration := time.Since(problemStart)
+				if duration > 2*time.Second {
+					fmt.Printf("Completed %d/%d (problem %d) in %s | Still working: %v\n",
+						done, len(problems), p.lineNum+1, duration, stillWorking)
+				}
 			}
 		}()
 	}

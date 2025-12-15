@@ -83,7 +83,7 @@ func main() {
 			defer wg.Done()
 			results[idx] = canPackShapes(a, presentShapes)
 
-			fmt.Printf("Area %d (%dx%d) processed: can pack = %v\n", idx, a.Width, a.Height, results[idx])
+			//fmt.Printf("Area %d (%dx%d) processed: can pack = %v\n", idx, a.Width, a.Height, results[idx])
 		}(i, area)
 	}
 	wg.Wait()

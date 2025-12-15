@@ -5,6 +5,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func main() {
@@ -12,6 +13,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	startTime := time.Now()
 
 	// Split the input data into ranges
 	ranges := strings.Split(strings.TrimSpace(string(data)), ",")
@@ -64,4 +66,5 @@ func main() {
 		}
 	}
 	fmt.Printf("Total of all invalid IDs: %d\n", totals)
+	fmt.Printf("Execution time: %s\n", time.Since(startTime))
 }

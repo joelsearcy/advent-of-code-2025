@@ -5,6 +5,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func main() {
@@ -12,6 +13,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	startTime := time.Now()
 
 	// split the input data into lines
 	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
@@ -40,6 +42,7 @@ func main() {
 	}
 
 	fmt.Printf("Total Joltage: %d\n", totalJoltage)
+	fmt.Printf("Execution time: %s\n", time.Since(startTime))
 }
 
 func findIndexOfNextMaxDigit(line string, startIndex int) (int, byte) {

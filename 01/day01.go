@@ -5,6 +5,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // define an enum of type of values: "stops", "passes"
@@ -20,6 +21,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	startTime := time.Now()
 
 	// Split the input data into lines
 	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
@@ -74,4 +76,5 @@ func main() {
 	fmt.Printf("landedOnZero: %d\n", landedOnZero)
 	fmt.Printf("visitedZero: %d\n", visitedZero)
 	fmt.Printf("Number of times landed on or passing 0: %d\n", countOfZeros)
+	fmt.Printf("Execution time: %s\n", time.Since(startTime))
 }
