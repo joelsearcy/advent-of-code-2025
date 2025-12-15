@@ -1,8 +1,11 @@
 package main
 
 import (
+	"flag"
 	"fmt"
+	"math/bits"
 	"os"
+	"runtime/pprof"
 	"sort"
 	"strconv"
 	"strings"
@@ -16,7 +19,108 @@ type Area struct {
 	PresentCounts map[int]int // shape index to count
 }
 
+// BitGrid represents a grid using uint64 bitsets for ultra-fast operations
+type BitGrid struct {
+	rows   []uint64
+	width  int
+	height int
+}
+
+// BitShape represents a shape using uint64 bitsets
+type BitShape struct {
+	rows   []uint64
+	width  int
+	height int
+	area   int
+}
+
+// Convert shape to bitset
+func shapeToBitset(shape [][]int) BitShape {
+	h, w := len(shape), len(shape[0])
+	rows := make([]uint64, h)
+	area := 0
+
+	for y := 0; y < h; y++ {
+		var row uint64
+		for x := 0; x < w; x++ {
+			if shape[y][x] == 1 {
+				row |= 1 << x
+				area++
+			}
+		}
+		rows[y] = row
+	}
+
+	return BitShape{rows: rows, width: w, height: h, area: area}
+}
+
+// Create empty bit grid
+func newBitGrid(width, height int) BitGrid {
+	return BitGrid{
+		rows:   make([]uint64, height),
+		width:  width,
+		height: height,
+	}
+}
+
+// Check if shape can be placed at position (x, y) - ULTRA FAST
+func canPlaceBitShape(grid *BitGrid, shape *BitShape, x, y int) bool {
+	// Bounds check
+	if y+shape.height > grid.height || x+shape.width > grid.width {
+		return false
+	}
+
+	// Check overlap using bitwise AND with early exit
+	for sy := 0; sy < shape.height; sy++ {
+		shapeRow := shape.rows[sy] << x
+		if (grid.rows[y+sy] & shapeRow) != 0 {
+			return false
+		}
+	}
+
+	return true
+}
+
+// Place shape on grid - ULTRA FAST
+func placeBitShape(grid *BitGrid, shape *BitShape, x, y int) {
+	for sy := 0; sy < shape.height; sy++ {
+		grid.rows[y+sy] |= shape.rows[sy] << x
+	}
+}
+
+// Remove shape from grid - ULTRA FAST
+func removeBitShape(grid *BitGrid, shape *BitShape, x, y int) {
+	for sy := 0; sy < shape.height; sy++ {
+		grid.rows[y+sy] ^= shape.rows[sy] << x
+	}
+}
+
+// Count filled cells in grid using fast popcount
+func countFilledCells(grid *BitGrid) int {
+	count := 0
+	for _, row := range grid.rows {
+		count += bits.OnesCount64(row)
+	}
+	return count
+}
+
 func main() {
+	cpuprofile := flag.String("cpuprofile", "", "write cpu profile to file")
+	memprofile := flag.String("memprofile", "", "write memory profile to file")
+	flag.Parse()
+
+	if *cpuprofile != "" {
+		f, err := os.Create(*cpuprofile)
+		if err != nil {
+			panic(err)
+		}
+		defer f.Close()
+		if err := pprof.StartCPUProfile(f); err != nil {
+			panic(err)
+		}
+		defer pprof.StopCPUProfile()
+	}
+
 	data, err := os.ReadFile("input.txt")
 	if err != nil {
 		panic(err)
@@ -77,13 +181,12 @@ func main() {
 	// Process areas in parallel
 	var wg sync.WaitGroup
 	results := make([]bool, len(areas))
+
 	for i, area := range areas {
 		wg.Add(1)
 		go func(idx int, a Area) {
 			defer wg.Done()
 			results[idx] = canPackShapes(a, presentShapes)
-
-			//fmt.Printf("Area %d (%dx%d) processed: can pack = %v\n", idx, a.Width, a.Height, results[idx])
 		}(i, area)
 	}
 	wg.Wait()
@@ -97,6 +200,17 @@ func main() {
 
 	fmt.Printf("Part 1 Total: %d of %d\n", part1Total, len(areas))
 	fmt.Printf("Execution time: %s\n", time.Since(startTime))
+
+	if *memprofile != "" {
+		f, err := os.Create(*memprofile)
+		if err != nil {
+			panic(err)
+		}
+		defer f.Close()
+		if err := pprof.WriteHeapProfile(f); err != nil {
+			panic(err)
+		}
+	}
 }
 
 type Transform func(x, y, width, height int) (int, int)
@@ -216,96 +330,106 @@ func abs(x int) int {
 	return x
 }
 
-// Check if a shape can be placed at position (x, y) on the grid
-func canPlaceShape(grid [][]int, shape [][]int, x, y int) bool {
-	h, w := len(shape), len(shape[0])
-	gridH, gridW := len(grid), len(grid[0])
-
-	// Check bounds
-	if y+h > gridH || x+w > gridW {
-		return false
+func min(a, b int) int {
+	if a < b {
+		return a
 	}
-
-	// Check overlap
-	for sy := 0; sy < h; sy++ {
-		for sx := 0; sx < w; sx++ {
-			if shape[sy][sx] == 1 && grid[y+sy][x+sx] == 1 {
-				return false
-			}
-		}
-	}
-
-	return true
+	return b
 }
 
-// Place a shape on the grid (modifies grid in place)
-func placeShape(grid [][]int, shape [][]int, x, y int) {
-	h, w := len(shape), len(shape[0])
-	for sy := 0; sy < h; sy++ {
-		for sx := 0; sx < w; sx++ {
-			if shape[sy][sx] == 1 {
-				grid[y+sy][x+sx] = 1
-			}
-		}
+func max(a, b int) int {
+	if a > b {
+		return a
 	}
+	return b
 }
 
-// Remove a shape from the grid (for backtracking)
-func removeShape(grid [][]int, shape [][]int, x, y int) {
-	h, w := len(shape), len(shape[0])
-	for sy := 0; sy < h; sy++ {
-		for sx := 0; sx < w; sx++ {
-			if shape[sy][sx] == 1 {
-				grid[y+sy][x+sx] = 0
-			}
-		}
-	}
-}
-
-// Backtracking solver
-func solveBacktrack(grid [][]int, remainingShapes []int, orientations [][][][]int) bool {
-	// Base case: no more shapes to place
-	if len(remainingShapes) == 0 {
+// Backtracking solver with index-based recursion (zero allocations)
+func solveBacktrackBitMRV(grid *BitGrid, shapesToPlace []int, startIdx int, orientations [][]BitShape, remainingArea int, emptySpaces int) bool {
+	// Base case: placed all shapes
+	if startIdx >= len(shapesToPlace) {
 		return true
 	}
 
-	// Take next shape to place
-	shapeIdx := remainingShapes[0]
-	remaining := remainingShapes[1:]
+	// Early termination: if remaining shapes can't fit in empty space
+	if remainingArea > emptySpaces {
+		return false
+	}
 
-	// Early termination: check if remaining area is sufficient
-	if len(remaining) > 0 {
-		emptySpaces := countEmptySpaces(grid)
-		remainingArea := 0
-		for _, idx := range remaining {
-			// Count cells in first orientation (all have same area)
-			if len(orientations[idx]) > 0 {
-				remainingArea += getShapeArea(orientations[idx][0])
-			}
-		}
-		if remainingArea > emptySpaces {
+	// Additional pruning: use popcount to verify actual empty space
+	// Check every 3 levels to catch fragmentation early
+	if startIdx%3 == 0 && startIdx > 0 {
+		actualFilled := countFilledCells(grid)
+		actualEmpty := grid.width*grid.height - actualFilled
+		if remainingArea > actualEmpty {
 			return false
 		}
 	}
 
-	// Try all orientations
-	for _, oriented := range orientations[shapeIdx] {
-		h, w := len(oriented), len(oriented[0])
-		gridH, gridW := len(grid), len(grid[0])
+	// Symmetry breaking: if grid is empty, only try top-left corner for first shape
+	if startIdx == 0 {
+		shapeIdx := shapesToPlace[0]
 
-		// Try all positions
-		for y := 0; y <= gridH-h; y++ {
-			for x := 0; x <= gridW-w; x++ {
-				if canPlaceShape(grid, oriented, x, y) {
-					// Place and recurse
-					placeShape(grid, oriented, x, y)
+		for i := range orientations[shapeIdx] {
+			oriented := &orientations[shapeIdx][i]
+			if oriented.height <= grid.height && oriented.width <= grid.width {
+				if canPlaceBitShape(grid, oriented, 0, 0) {
+					placeBitShape(grid, oriented, 0, 0)
+					if solveBacktrackBitMRV(grid, shapesToPlace, 1, orientations, remainingArea-oriented.area, emptySpaces-oriented.area) {
+						return true
+					}
+					removeBitShape(grid, oriented, 0, 0)
+				}
+			}
+		}
+		return false
+	}
 
-					if solveBacktrack(grid, remaining, orientations) {
+	// Get current shape to place
+	shapeIdx := shapesToPlace[startIdx]
+
+	// Try all orientations and positions
+	for i := range orientations[shapeIdx] {
+		oriented := &orientations[shapeIdx][i]
+
+		if oriented.height > grid.height || oriented.width > grid.width {
+			continue
+		}
+
+		maxY := grid.height - oriented.height
+		maxX := grid.width - oriented.width
+
+		for y := 0; y <= maxY; y++ {
+			row := grid.rows[y]
+
+			// Skip completely filled rows
+			if row == (uint64(1)<<grid.width)-1 {
+				continue
+			}
+
+			for x := 0; x <= maxX; x++ {
+				// Use TrailingZeros64 to skip filled positions
+				if x < 64 && (row&(1<<x)) != 0 {
+					// Position is filled - find next empty position
+					remaining := ^row >> (x + 1) // Invert and shift past current position
+					if remaining == 0 {
+						break // No more empty cells
+					}
+					skip := bits.TrailingZeros64(remaining)
+					x += skip + 1
+					if x > maxX {
+						break
+					}
+				}
+
+				if canPlaceBitShape(grid, oriented, x, y) {
+					placeBitShape(grid, oriented, x, y)
+
+					if solveBacktrackBitMRV(grid, shapesToPlace, startIdx+1, orientations, remainingArea-oriented.area, emptySpaces-oriented.area) {
 						return true
 					}
 
-					// Backtrack
-					removeShape(grid, oriented, x, y)
+					removeBitShape(grid, oriented, x, y)
 				}
 			}
 		}
@@ -314,12 +438,44 @@ func solveBacktrack(grid [][]int, remainingShapes []int, orientations [][][][]in
 	return false
 }
 
-// Main packing function
+// Cache for orientations to avoid recomputing across areas
+var orientationCache = struct {
+	sync.RWMutex
+	cache map[string][]BitShape
+}{cache: make(map[string][]BitShape)}
+
+// Get all orientations as bitsets
+func getAllOrientationsBit(shape [][]int) []BitShape {
+	orientations := getAllOrientations(shape)
+	bitOrientations := make([]BitShape, len(orientations))
+
+	for i, oriented := range orientations {
+		bitOrientations[i] = shapeToBitset(oriented)
+	}
+
+	return bitOrientations
+}
+
+// Main packing function with bitset optimization
 func canPackShapes(area Area, presentShapes [][][]int) bool {
-	// Pre-compute all orientations for each shape
-	allOrientations := make([][][][]int, len(presentShapes))
+	// Pre-compute all orientations as bitsets (with caching)
+	allOrientations := make([][]BitShape, len(presentShapes))
 	for i, shape := range presentShapes {
-		allOrientations[i] = getAllOrientations(shape)
+		key := shapeToString(shape)
+
+		orientationCache.RLock()
+		cached, ok := orientationCache.cache[key]
+		orientationCache.RUnlock()
+
+		if ok {
+			allOrientations[i] = cached
+		} else {
+			orientations := getAllOrientationsBit(shape)
+			orientationCache.Lock()
+			orientationCache.cache[key] = orientations
+			orientationCache.Unlock()
+			allOrientations[i] = orientations
+		}
 	}
 
 	// Build list of shapes to place (with counts)
@@ -327,13 +483,22 @@ func canPackShapes(area Area, presentShapes [][][]int) bool {
 		Idx  int
 		Area int
 	}
-	shapeInfos := []ShapeInfo{}
+
+	// Pre-allocate to avoid reallocation
+	totalCount := 0
+	for _, count := range area.PresentCounts {
+		totalCount += count
+	}
+	shapeInfos := make([]ShapeInfo, 0, totalCount)
 	totalShapeArea := 0
 
 	for shapeIdx, count := range area.PresentCounts {
 		shapeArea := getShapeArea(presentShapes[shapeIdx])
 		for i := 0; i < count; i++ {
-			shapeInfos = append(shapeInfos, ShapeInfo{Idx: shapeIdx, Area: shapeArea})
+			shapeInfos = append(shapeInfos, ShapeInfo{
+				Idx:  shapeIdx,
+				Area: shapeArea,
+			})
 			totalShapeArea += shapeArea
 		}
 	}
@@ -344,24 +509,23 @@ func canPackShapes(area Area, presentShapes [][][]int) bool {
 		return false
 	}
 
-	// Sort shapes by area (largest first - most constrained)
+	// Sort shapes smallest first (proven fastest strategy)
 	sort.Slice(shapeInfos, func(i, j int) bool {
-		return shapeInfos[i].Area > shapeInfos[j].Area
+		return shapeInfos[i].Area < shapeInfos[j].Area
 	})
 
+	// Pre-allocated with capacity
 	shapesToPlace := make([]int, len(shapeInfos))
+	remainingSizes := totalShapeArea
 	for i, info := range shapeInfos {
 		shapesToPlace[i] = info.Idx
 	}
 
-	// Create empty grid
-	grid := make([][]int, area.Height)
-	for i := range grid {
-		grid[i] = make([]int, area.Width)
-	}
+	// Create empty bitgrid
+	grid := newBitGrid(area.Width, area.Height)
 
-	// Solve with backtracking
-	return solveBacktrack(grid, shapesToPlace, allOrientations)
+	// Solve with bitset backtracking (index-based, zero allocations)
+	return solveBacktrackBitMRV(&grid, shapesToPlace, 0, allOrientations, remainingSizes, gridArea)
 }
 
 // Calculate area of a shape (number of filled cells)
@@ -375,17 +539,4 @@ func getShapeArea(shape [][]int) int {
 		}
 	}
 	return area
-}
-
-// Count empty spaces in grid
-func countEmptySpaces(grid [][]int) int {
-	count := 0
-	for _, row := range grid {
-		for _, cell := range row {
-			if cell == 0 {
-				count++
-			}
-		}
-	}
-	return count
 }
